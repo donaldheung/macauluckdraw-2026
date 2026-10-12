@@ -19,47 +19,41 @@
       <h1 class="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
         <span>🎉</span> 澳門消費獎賞管理器
       </h1>
-      <p class="text-xs text-slate-500 mt-1">Google Sheets 雲端同步版</p>
+      <p class="text-xs text-slate-500 mt-1">Google Sheets 雲端動態同步版</p>
     </header>
 
-    <!-- 登入卡片 (未登入時顯示) -->
+    <!-- 登入卡片 -->
     <div v-if="!currentUser" class="bg-white p-6 rounded-xl shadow-md border border-slate-200 text-center space-y-4">
       <div class="space-y-1">
         <h2 class="text-lg font-bold text-slate-800">🔐 會員身份認證</h2>
-        <p class="text-xs text-slate-500">請輸入用戶名稱與密碼</p>
+        <p class="text-xs text-slate-500">請輸入 Google Sheet「Users」內的帳號與密碼</p>
       </div>
 
       <div class="space-y-3 text-left">
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">用戶名稱</label>
-          <input type="text" v-model="loginForm.username" @keyup.enter="handleLogin" placeholder="例如: Donald 或 Owner" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">用戶名稱 (Username)</label>
+          <input type="text" v-model="loginForm.username" @keyup.enter="handleLogin" placeholder="例如: Admin, Donald, Agnes" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">專屬密碼</label>
-          <input type="password" v-model="loginForm.password" @keyup.enter="handleLogin" placeholder="請輸入密碼" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">專屬密碼 (Pin)</label>
+          <input type="password" v-model="loginForm.password" @keyup.enter="handleLogin" placeholder="請輸入 Pin 碼" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500">
         </div>
         <p v-if="loginError" class="text-xs text-red-500 text-center font-medium">{{ loginError }}</p>
       </div>
 
-      <button @click="handleLogin" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-sm shadow transition">
-        登入系統
+      <button @click="handleLogin" :disabled="isLoadingUsers" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold rounded-lg text-sm shadow transition">
+        {{ isLoadingUsers ? '載入帳號中...' : '登入系統' }}
       </button>
-
-      <div class="p-3 bg-slate-50 rounded-lg text-[11px] text-slate-500 text-left space-y-1 border border-slate-100">
-        <p class="font-bold text-slate-700">💡 預設測試帳號：</p>
-        <p>• 成員帳號：<code class="bg-slate-200 px-1 rounded">Donald</code> / 密碼：<code class="bg-slate-200 px-1 rounded">123</code></p>
-        <p>• 管理員帳號：<code class="bg-slate-200 px-1 rounded">Owner</code> / 密碼：<code class="bg-slate-200 px-1 rounded">admin</code></p>
-      </div>
     </div>
 
-    <!-- 主介面 (登入後顯示) -->
+    <!-- 主介面 -->
     <div v-else class="space-y-4">
       
       <!-- 用戶資訊欄 -->
       <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center text-xs">
         <div>
           <span class="text-slate-500">👤 當前登入：</span>
-          <span class="font-bold text-slate-700">{{ currentUser }} ({{ userRole === 'owner' ? '管理員' : '成員' }})</span>
+          <span class="font-bold text-slate-700">{{ currentUser }} ({{ userRole === 'admin' ? '管理員' : '成員' }})</span>
         </div>
         <button @click="logout" class="text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded bg-red-50 border border-red-200">登出帳號</button>
       </div>
@@ -150,7 +144,7 @@
               <span class="text-sm text-blue-600">{{ rec.bank }}</span>
               <div class="space-x-2">
                 <span class="text-slate-400 text-[10px]">記錄人: {{ rec.user }}</span>
-                <button v-if="userRole === 'owner' || rec.user === currentUser" @click="deleteRecord(rec.id)" class="text-red-500 hover:underline">刪除</button>
+                <button v-if="userRole === 'admin' || rec.user === currentUser" @click="deleteRecord(rec.id)" class="text-red-500 hover:underline">刪除</button>
               </div>
             </div>
 
@@ -173,7 +167,6 @@
   <script>
     const { createApp, ref, computed, onMounted } = Vue;
 
-    // 你的 Google Apps Script Web App URL
     const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxQ1bo-fYids5_i1oE5k6ZIKzkdj5Qi8o4AebGJScENQCgHs_u-81H8ZzQjmkzoEQqW/exec';
 
     createApp({
@@ -184,14 +177,10 @@
         const selectedRound = ref(0);
         const records = ref([]);
         const isSubmitting = ref(false);
+        const isLoadingUsers = ref(false);
         const loginError = ref('');
 
         const loginForm = ref({ username: '', password: '' });
-
-        const usersConfig = {
-          'donald': { password: '123', name: 'Donald', role: 'member' },
-          'owner': { password: 'admin', name: 'Owner', role: 'owner' }
-        };
 
         const banks = ['支付寶', '中銀', 'ICBC', 'UEPay', 'Luso', '大豐', '廣發', 'MPay'];
         const amounts = [0, 10, 20, 50, 100, 200];
@@ -205,19 +194,40 @@
 
         const form = ref({ bank: '', draws: [0, 0, 0] });
 
-        const handleLogin = () => {
-          const u = loginForm.value.username.trim().toLowerCase();
-          const p = loginForm.value.password.trim();
-          
-          if (usersConfig[u] && usersConfig[u].password === p) {
-            currentUser.value = usersConfig[u].name;
-            userRole.value = usersConfig[u].role;
-            localStorage.setItem('lottery_user', currentUser.value);
-            localStorage.setItem('lottery_role', userRole.value);
-            loginError.value = '';
-            fetchData();
-          } else {
-            loginError.value = '帳號或密碼不正確，請重新輸入';
+        const handleLogin = async () => {
+          const uInput = loginForm.value.username.trim();
+          const pInput = loginForm.value.password.trim();
+
+          if (!uInput || !pInput) {
+            loginError.value = '請輸入帳號與密碼';
+            return;
+          }
+
+          isLoadingUsers.value = true;
+          loginError.value = '';
+
+          try {
+            const res = await fetch(SCRIPT_URL + '?action=users');
+            const users = await res.json();
+            
+            const matched = users.find(user => 
+              user.username.toLowerCase() === uInput.toLowerCase() && user.pin === pInput
+            );
+
+            if (matched) {
+              currentUser.value = matched.username;
+              userRole.value = matched.role;
+              localStorage.setItem('lottery_user', currentUser.value);
+              localStorage.setItem('lottery_role', userRole.value);
+              loginError.value = '';
+              fetchData();
+            } else {
+              loginError.value = '帳號或 Pin 碼不正確，請重新輸入';
+            }
+          } catch (e) {
+            loginError.value = '連線雲端驗證失敗，請稍後再試';
+          } finally {
+            isLoadingUsers.value = false;
           }
         };
 
@@ -242,7 +252,6 @@
           return records.value.filter(r => r.round === selectedRound.value);
         });
 
-        // 從 Google Sheets 讀取數據
         const fetchData = async () => {
           try {
             const res = await fetch(SCRIPT_URL);
@@ -255,7 +264,6 @@
           }
         };
 
-        // 同步所有數據到 Google Sheets
         const saveData = async () => {
           try {
             await fetch(SCRIPT_URL, {
@@ -307,7 +315,7 @@
 
         return {
           currentUser, userRole, activeTab, selectedRound, rounds, banks, amounts,
-          form, loginForm, loginError, isSubmitting, currentFormTotal, currentRoundRecords,
+          form, loginForm, loginError, isSubmitting, isLoadingUsers, currentFormTotal, currentRoundRecords,
           handleLogin, logout, selectBank, isBankRecordedInCurrentRound, submitRecord,
           deleteRecord, toggleVoucher, fetchData
         };
