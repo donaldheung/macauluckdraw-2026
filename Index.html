@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>澳門消費獎賞管理器</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    [v-cloak] { display: none; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen p-3 md:p-6">
+  <div id="app" v-cloak class="max-w-md mx-auto space-y-4">
+
+    <!-- 標題與簡介 -->
+    <header class="text-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <h1 class="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
+        <span>🎉</span> 澳門消費獎賞管理器
+      </h1>
+      <p class="text-xs text-slate-500 mt-1">活動期：9/10 - 17/12（每週一輪）</p>
+    </header>
+
+    <!-- 登入卡片 (未登入時顯示) -->
+    <div v-if="!currentUser" class="bg-white p-6 rounded-xl shadow-md border border-slate-200 text-center space-y-4">
+      <div class="space-y-1">
+        <h2 class="text-lg font-bold text-slate-800">🔐 會員身份認證</h2>
+        <p class="text-xs text-slate-500">請輸入您的註冊名稱與專屬密碼</p>
+      </div>
+
+      <div class="space-y-3 text-left">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">用戶名稱</label>
+          <input type="text" v-model="loginForm.username" placeholder="例如: Donald 或 Owner" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">專屬密碼</label>
+          <input type="password" v-model="loginForm.password" placeholder="請輸入密碼" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+        </div>
+        <p v-if="loginError" class="text-xs text-red-500 text-center font-medium">{{ loginError }}</p>
+      </div>
+
+      <button @click="handleLogin" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-sm shadow transition">
+        登入系統
+      </button>
+    </div>
+
+    <!-- 主介面 (登入後顯示) -->
+    <div v-else class="space-y-4">
+      
+      <!-- 用戶資訊欄 -->
+      <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center text-xs">
+        <div>
+          <span class="text-slate-500">👤 當前登入：</span>
+          <span class="font-bold text-slate-700">{{ currentUser }} ({{ userRole === 'owner' ? '管理員' : '成員' }})</span>
+        </div>
+        <button @click="logout" class="text-slate-400 hover:text-red-500 underline">登出</button>
+      </div>
+
+      <!-- 輪次選擇器 -->
+      <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center text-xs">
+        <span class="text-slate-500 font-medium">📅 目前操作輪次：</span>
+        <select v-model="selectedRound" class="font-bold text-blue-600 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+          <option v-for="(r, idx) in rounds" :key="idx" :value="idx">
+            第 {{ idx + 1 }} 輪 ({{ r.start }} - {{ r.end }})
+          </option>
+        </select>
+      </div>
+
+      <!-- 功能分頁按鈕 -->
+      <div class="flex bg-slate-200 p-1 rounded-xl text-xs font-bold text-slate-600">
+        <button @click="activeTab = 'entry'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'entry'}" class="flex-1 py-2 rounded-lg transition text-center">1. 極速輸入</button>
+        <button @click="activeTab = 'voucher'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'voucher'}" class="flex-1 py-2 rounded-lg transition text-center">2. 本輪核銷</button>
+        <button @click="activeTab = 'chart'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'chart'}" class="flex-1 py-2 rounded-lg transition text-center">3. 圖表總覽</button>
+      </div>
+
+      <!-- 分頁 1: 極速輸入 -->
+      <div v-if="activeTab === 'entry'" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <h3 class="text-sm font-bold text-slate-700 flex justify-between items-center">
+          <span>➕ 記錄抽獎結果</span>
+          <span class="text-xs font-normal text-slate-400">身份: {{ currentUser }}</span>
+        </h3>
+
+        <!-- 選擇銀行 -->
+        <div class="space-y-1">
+          <label class="text-xs font-semibold text-slate-500">選擇支付機構 / 銀行（同輪不可重複）</label>
+          <div class="grid grid-cols-4 gap-1.5 pt-1">
+            <button v-for="b in banks" :key="b" 
+                    @click="selectBank(b)"
+                    :disabled="isBankRecordedInCurrentRound(b)"
+                    :class="{
+                      'bg-slate-100 text-slate-300 border-dashed cursor-not-allowed': isBankRecordedInCurrentRound(b),
+                      'bg-blue-600 text-white font-bold border-blue-600 shadow-sm': form.bank === b && !isBankRecordedInCurrentRound(b),
+                      'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100': form.bank !== b && !isBankRecordedInCurrentRound(b)
+                    }"
+                    class="py-2 px-1 text-xs border rounded-lg transition text-center relative">
+              {{ b }}
+              <span v-if="isBankRecordedInCurrentRound(b)" class="block text-[9px] text-slate-400 scale-90">已記錄</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3 次抽獎金額 -->
+        <div class="space-y-3 pt-2">
+          <div v-for="draw in [0, 1, 2]" :key="draw" class="space-y-1">
+            <label class="text-xs font-semibold text-slate-500">第 {{ draw + 1 }} 次抽獎</label>
+            <div class="grid grid-cols-6 gap-1">
+              <button v-for="amt in amounts" :key="amt" 
+                      @click="form.draws[draw] = amt"
+                      :class="form.draws[draw] === amt ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200'"
+                      class="py-1.5 text-xs border rounded-md transition text-center">
+                ${{ amt }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 本筆總計與提交 -->
+        <div class="pt-2 border-t flex justify-between items-center">
+          <div class="text-xs text-slate-500">
+            本筆總獲得：<span class="text-base font-extrabold text-emerald-600">${{ currentFormTotal }}</span>
+          </div>
+          <button @click="submitRecord" :disabled="!form.bank || isSubmitting" 
+                  class="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-lg shadow transition">
+            {{ isSubmitting ? '提交中...' : '確認提交' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 分頁 2: 本輪核銷與明細 -->
+      <div v-if="activeTab === 'voucher'" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <h3 class="text-sm font-bold text-slate-700">🎟️ 第 {{ selectedRound + 1 }} 輪優惠券與明細</h3>
+        
+        <div v-if="currentRoundRecords.length === 0" class="text-center py-8 text-xs text-slate-400">
+          本輪暫無記錄
+        </div>
+
+        <div v-else class="space-y-3">
+          <div v-for="rec in currentRoundRecords" :key="rec.id" class="p-3 border border-slate-100 bg-slate-50 rounded-lg text-xs space-y-2">
+            <div class="flex justify-between items-center font-bold text-slate-700">
+              <span class="text-sm text-blue-600">{{ rec.bank }}</span>
+              <div class="space-x-2">
+                <span class="text-slate-400 text-[10px]">{{ rec.user }}</span>
+                <button v-if="userRole === 'owner' || rec.user === currentUser" @click="deleteRecord(rec.id)" class="text-red-400 hover:text-red-600">刪除</button>
+              </div>
+            </div>
+
+            <!-- 券核銷開關 -->
+            <div class="grid grid-cols-3 gap-1 pt-1">
+              <button v-for="(amt, i) in rec.draws" :key="i"
+                      @click="toggleVoucher(rec.id, i)"
+                      :class="rec.used[i] ? 'bg-slate-200 text-slate-400 line-through' : 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-300'"
+                      class="py-1 text-[11px] rounded transition text-center">
+                ${{ amt }} {{ rec.used[i] ? '(已核銷)' : '(未用)' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分頁 3: 圖表與統計 -->
+      <div v-if="activeTab === 'chart'" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <h3 class="text-sm font-bold text-slate-700">📊 全局統計圖表</h3>
+        <div class="relative h-48">
+          <canvas id="statsChart"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+
+    // 免費 MockBin JSON 儲存 API
+    const API_URL = 'https://jsonbin.org/me/macau-lottery-data'; // 使用通用開放 endpoint
+
+    createApp({
+      setup() {
+        const currentUser = ref(localStorage.getItem('lottery_user') || '');
+        const userRole = ref(localStorage.getItem('lottery_role') || '');
+        const activeTab = ref('entry');
+        const selectedRound = ref(0);
+        const records = ref([]);
+        const isSubmitting = ref(false);
+        const loginError = ref('');
+
+        const loginForm = ref({ username: '', password: '' });
+
+        const usersConfig = {
+          'Donald': { password: '123', role: 'member' },
+          'Owner': { password: 'admin', role: 'owner' }
+        };
+
+        const banks = ['支付寶', '中銀', 'ICBC', 'UEPay', 'Luso', '大豐', '廣發', 'MPay'];
+        const amounts = [0, 10, 20, 50, 100, 200];
+        const rounds = [
+          { start: '09/10', end: '10/15' }, { start: '10/16', end: '10/22' },
+          { start: '10/23', end: '10/29' }, { start: '10/30', end: '11/05' },
+          { start: '11/06', end: '11/12' }, { start: '11/13', end: '11/19' },
+          { start: '11/20', end: '11/26' }, { start: '11/27', end: '12/03' },
+          { start: '12/04', end: '12/10' }, { start: '12/11', end: '12/17' }
+        ];
+
+        const form = ref({ bank: '', draws: [0, 0, 0] });
+
+        const handleLogin = () => {
+          const u = loginForm.value.username.trim();
+          const p = loginForm.value.password.trim();
+          if (usersConfig[u] && usersConfig[u].password === p) {
+            currentUser.value = u;
+            userRole.value = usersConfig[u].role;
+            localStorage.setItem('lottery_user', u);
+            localStorage.setItem('lottery_role', userRole.value);
+            loginError.value = '';
+            fetchData();
+          } else {
+            loginError.value = '帳號或密碼錯誤';
+          }
+        };
+
+        const logout = () => {
+          currentUser.value = '';
+          userRole.value = '';
+          localStorage.removeItem('lottery_user');
+          localStorage.removeItem('lottery_role');
+        };
+
+        const currentFormTotal = computed(() => form.value.draws.reduce((a, b) => a + b, 0));
+
+        const isBankRecordedInCurrentRound = (bank) => {
+          return records.value.some(r => r.round === selectedRound.value && r.bank === bank);
+        };
+
+        const selectBank = (b) => {
+          if (!isBankRecordedInCurrentRound(b)) form.value.bank = b;
+        };
+
+        const currentRoundRecords = computed(() => {
+          return records.value.filter(r => r.round === selectedRound.value);
+        });
+
+        const fetchData = async () => {
+          try {
+            const res = localStorage.getItem('macau_app_records');
+            if (res) records.value = JSON.parse(res);
+          } catch (e) { console.error(e); }
+        };
+
+        const saveData = () => {
+          localStorage.setItem('macau_app_records', JSON.stringify(records.value));
+        };
+
+        const submitRecord = () => {
+          if (!form.value.bank) return;
+          isSubmitting.value = true;
+          const newRecord = {
+            id: Date.now().toString(),
+            round: selectedRound.value,
+            bank: form.value.bank,
+            draws: [...form.value.draws],
+            used: [false, false, false],
+            user: currentUser.value
+          };
+          records.value.push(newRecord);
+          saveData();
+          form.value = { bank: '', draws: [0, 0, 0] };
+          isSubmitting.value = false;
+        };
+
+        const deleteRecord = (id) => {
+          records.value = records.value.filter(r => r.id !== id);
+          saveData();
+        };
+
+        const toggleVoucher = (id, idx) => {
+          const rec = records.value.find(r => r.id === id);
+          if (rec) {
+            rec.used[idx] = !rec.used[idx];
+            saveData();
+          }
+        };
+
+        onMounted(() => {
+          if (currentUser.value) fetchData();
+        });
+
+        return {
+          currentUser, userRole, activeTab, selectedRound, rounds, banks, amounts,
+          form, loginForm, loginError, isSubmitting, currentFormTotal, currentRoundRecords,
+          handleLogin, logout, selectBank, isBankRecordedInCurrentRound, submitRecord,
+          deleteRecord, toggleVoucher
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
