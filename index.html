@@ -19,7 +19,7 @@
       <h1 class="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
         <span>🎉</span> 澳門消費獎賞管理器
       </h1>
-      <p class="text-xs text-slate-500 mt-1">Google Sheets 雲端同步與數據看板版</p>
+      <p class="text-xs text-slate-500 mt-1">Google Sheets 雲端同步與多用戶 Dashboard 版</p>
     </header>
 
     <!-- 登入卡片 -->
@@ -49,16 +49,28 @@
     <!-- 主介面 -->
     <div v-else class="space-y-4">
       
-      <!-- 用戶資訊欄 -->
-      <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center text-xs">
-        <div>
-          <span class="text-slate-500">👤 當前登入：</span>
-          <span class="font-bold text-slate-700">{{ currentUser }} ({{ userRole === 'admin' ? '管理員' : '成員' }})</span>
+      <!-- 用戶資訊與 Admin 切換面板 -->
+      <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 space-y-2 text-xs">
+        <div class="flex justify-between items-center">
+          <div>
+            <span class="text-slate-500">👤 當前登入：</span>
+            <span class="font-bold text-slate-700">{{ currentUser }} ({{ userRole === 'admin' ? '管理員' : '成員' }})</span>
+          </div>
+          <button @click="logout" class="text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded bg-red-50 border border-red-200">登出帳號</button>
         </div>
-        <button @click="logout" class="text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded bg-red-50 border border-red-200">登出帳號</button>
+
+        <!-- Admin 專屬檢視切換器 -->
+        <div v-if="userRole === 'admin'" class="pt-2 border-t flex items-center justify-between">
+          <span class="text-slate-500 font-medium">👑 管理員視圖模式：</span>
+          <select v-model="adminViewMode" class="font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+            <option value="all">全家綜合總覽與比較</option>
+            <option value="Donald">檢視 Donald 個人記錄</option>
+            <option value="Agnes">檢視 Agnes 個人記錄</option>
+          </select>
+        </div>
       </div>
 
-      <!-- 功能分頁按鈕 (補回總覽與圖表) -->
+      <!-- 功能分頁按鈕 -->
       <div class="flex bg-slate-200 p-1 rounded-xl text-xs font-bold text-slate-600">
         <button @click="activeTab = 'entry'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'entry'}" class="flex-1 py-2 rounded-lg transition text-center">1. 記錄</button>
         <button @click="activeTab = 'voucher'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'voucher'}" class="flex-1 py-2 rounded-lg transition text-center">2. 本輪明細</button>
@@ -167,7 +179,7 @@
       <!-- 分頁 3: 總覽與圖表 (Overall) -->
       <div v-if="activeTab === 'overall'" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4 text-xs">
         <div class="flex justify-between items-center">
-          <h3 class="text-sm font-bold text-slate-700">📊 累積總覽與統計圖表</h3>
+          <h3 class="text-sm font-bold text-slate-700">📊 累積總覽與圓形佔比圖</h3>
           <button @click="fetchData" class="text-blue-600 hover:underline">🔄 重新整理</button>
         </div>
 
@@ -175,11 +187,52 @@
         <div class="grid grid-cols-2 gap-2">
           <div class="p-3 bg-blue-50 border border-blue-100 rounded-lg text-center">
             <p class="text-slate-500">總累積獲得金額</p>
-            <p class="text-lg font-extrabold text-blue-600 mt-1">${{ totalWonAmount }}</p>
+            <p class="text-lg font-extrabold text-blue-600 mt-1">${{ activeTotalWonAmount }}</p>
           </div>
           <div class="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-center">
             <p class="text-slate-500">總有效記錄筆數</p>
-            <p class="text-lg font-extrabold text-emerald-600 mt-1">{{ records.length }} 筆</p>
+            <p class="text-lg font-extrabold text-emerald-600 mt-1">{{ activeRecords.length }} 筆</p>
+          </div>
+        </div>
+
+        <!-- 圓形比例圖表 (可選：總覽定格 或 按輪次切換) -->
+        <div class="space-y-2 pt-2">
+          <div class="flex justify-between items-center">
+            <h4 class="font-bold text-slate-700">🟡 各支付機構獲獎佔比</h4>
+            <!-- 圓餅圖模式切換：總累積 vs 單輪次 -->
+            <select v-model="chartMode" class="bg-slate-50 border border-slate-200 rounded px-2 py-0.5 text-[11px] text-blue-600 font-bold">
+              <option value="total">顯示：全部累積總計</option>
+              <option value="round">顯示：按指定輪次</option>
+            </select>
+          </div>
+
+          <!-- 如果選擇按輪次，顯示輪次下拉選單 -->
+          <div v-if="chartMode === 'round'" class="pt-1">
+            <select v-model="chartSelectedRound" class="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs font-bold text-slate-700">
+              <option v-for="(r, idx) in rounds" :key="idx" :value="idx">第 {{ idx + 1 }} 輪 ({{ r.start }} - {{ r.end }})</option>
+            </select>
+          </div>
+
+          <!-- 圓餅圖顯示區 -->
+          <div class="p-4 bg-slate-50 rounded-xl border flex flex-col items-center space-y-3">
+            <div class="relative w-32 h-32 rounded-full flex items-center justify-center shadow-inner"
+                 :style="activePieChartConicStyle">
+              <div class="w-20 h-20 bg-white rounded-full flex flex-col items-center justify-center shadow">
+                <span class="text-[10px] text-slate-400">{{ chartMode === 'total' ? '總金額' : `第 ${chartSelectedRound+1} 輪` }}</span>
+                <span class="text-xs font-bold text-slate-700">${{ activePieChartTotal }}</span>
+              </div>
+            </div>
+
+            <!-- 圖例列表 -->
+            <div class="w-full grid grid-cols-2 gap-1.5 pt-2 border-t">
+              <div v-for="stat in activeBankStats" :key="stat.bank" class="flex items-center justify-between text-[11px]">
+                <div class="flex items-center space-x-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: stat.color }"></span>
+                  <span class="text-slate-600">{{ stat.bank }}</span>
+                </div>
+                <span class="font-bold">${{ stat.amount }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -219,9 +272,18 @@
         const isLoadingUsers = ref(false);
         const loginError = ref('');
 
+        // Admin 專屬檢視模式 ('all' 或 用戶名如 'Donald', 'Agnes')
+        const adminViewMode = ref('all');
+        
+        // 圓餅圖模式 ('total' 或 'round')
+        const chartMode = ref('total');
+        const chartSelectedRound = ref(0);
+
         const loginForm = ref({ username: '', password: '' });
 
         const banks = ['支付寶', '中銀', 'ICBC', 'UEPay', 'Luso', '大豐', '廣發', 'MPay'];
+        const bankColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'];
+        
         const amounts = [0, 10, 20, 50, 100, 200];
         const rounds = [
           { start: '09/10', end: '10/15' }, { start: '10/16', end: '10/22' },
@@ -277,11 +339,25 @@
           localStorage.removeItem('lottery_role');
         };
 
+        // 根據當前登入者身份及 Admin 切換模式，過濾出可見的記錄
+        const activeRecords = computed(() => {
+          if (userRole.value === 'admin') {
+            if (adminViewMode.value === 'all') {
+              return records.value; // Admin 睇全部
+            } else {
+              return records.value.filter(r => r.user.toLowerCase() === adminViewMode.value.toLowerCase()); // Admin 揀定單用戶
+            }
+          } else {
+            // 普通成員只能睇自己
+            return records.value.filter(r => r.user.toLowerCase() === currentUser.value.toLowerCase());
+          }
+        });
+
         const currentFormTotal = computed(() => form.value.draws.reduce((a, b) => a + b, 0));
 
-        // 檢查當前輪次是否已經記錄過該銀行（不論誰記錄的，全域同輪不可重複）
         const isBankRecordedInCurrentRound = (bank) => {
-          return records.value.some(r => r.round === selectedRound.value && r.bank === bank);
+          // 檢查當前身份在該輪是否已記錄過該銀行
+          return activeRecords.value.some(r => r.round === selectedRound.value && r.bank === bank);
         };
 
         const selectBank = (b) => {
@@ -289,16 +365,56 @@
         };
 
         const currentRoundRecords = computed(() => {
-          return records.value.filter(r => r.round === selectedRound.value);
+          return activeRecords.value.filter(r => r.round === selectedRound.value);
         });
 
         // 總覽統計計算
-        const totalWonAmount = computed(() => {
-          return records.value.reduce((sum, r) => sum + r.draws.reduce((a, b) => a + b, 0), 0);
+        const activeTotalWonAmount = computed(() => {
+          return activeRecords.value.reduce((sum, r) => sum + r.draws.reduce((a, b) => a + b, 0), 0);
+        });
+
+        // 圓餅圖數據與樣式計算（支援總計或按指定輪次）
+        const activeBankStats = computed(() => {
+          const stats = {};
+          banks.forEach((b, idx) => {
+            stats[b] = { bank: b, amount: 0, color: bankColors[idx] };
+          });
+
+          let targetRecords = activeRecords.value;
+          if (chartMode.value === 'round') {
+            targetRecords = targetRecords.filter(r => r.round === chartSelectedRound.value);
+          }
+
+          targetRecords.forEach(r => {
+            if (stats[r.bank]) {
+              stats[r.bank].amount += r.draws.reduce((a, b) => a + b, 0);
+            }
+          });
+          return Object.values(stats);
+        });
+
+        const activePieChartTotal = computed(() => {
+          return activeBankStats.value.reduce((sum, s) => sum + s.amount, 0);
+        });
+
+        const activePieChartConicStyle = computed(() => {
+          const total = activePieChartTotal.value;
+          if (total === 0) return { background: '#e2e8f0' };
+          let currentAngle = 0;
+          let gradients = [];
+          activeBankStats.value.forEach(stat => {
+            if (stat.amount > 0) {
+              const angle = (stat.amount / total) * 360;
+              const nextAngle = currentAngle + angle;
+              gradients.push(`${stat.color} ${currentAngle}deg ${nextAngle}deg`);
+              currentAngle = nextAngle;
+            }
+          });
+          return { background: `conic-gradient(${gradients.join(', ')})` };
         });
 
         const getRoundTotalAmount = (roundIdx) => {
-          return records.value
+          return activeRecords.value
             .filter(r => r.round === roundIdx)
             .reduce((sum, r) => sum + r.draws.reduce((a, b) => a + b, 0), 0);
         };
@@ -373,9 +489,11 @@
         return {
           currentUser, userRole, activeTab, selectedRound, rounds, banks, amounts,
           form, loginForm, loginError, isSubmitting, isLoadingUsers, currentFormTotal, 
-          currentRoundRecords, totalWonAmount, getRoundTotalAmount, getRoundBarWidth,
-          handleLogin, logout, selectBank, isBankRecordedInCurrentRound, submitRecord,
-          deleteRecord, toggleVoucher, fetchData, records
+          currentRoundRecords, activeRecords, adminViewMode,
+          chartMode, chartSelectedRound, activeTotalWonAmount, activeBankStats, 
+          activePieChartTotal, activePieChartConicStyle,
+          getRoundTotalAmount, getRoundBarWidth, handleLogin, logout, selectBank, 
+          isBankRecordedInCurrentRound, submitRecord, deleteRecord, toggleVoucher, fetchData, records
         };
       }
     }).mount('#app');
