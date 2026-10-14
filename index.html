@@ -19,7 +19,7 @@
       <h1 class="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
         <span>🎉</span> 澳門消費獎賞管理器
       </h1>
-      <p class="text-xs text-slate-500 mt-1">Google Sheets 雲端動態同步版</p>
+      <p class="text-xs text-slate-500 mt-1">Google Sheets 雲端同步與數據看板版</p>
     </header>
 
     <!-- 登入卡片 -->
@@ -42,7 +42,7 @@
       </div>
 
       <button @click="handleLogin" :disabled="isLoadingUsers" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold rounded-lg text-sm shadow transition">
-        {{ isLoadingUsers ? '載入帳號中...' : '登入系統' }}
+        {{ isLoadingUsers ? '雲端驗證中...' : '登入系統' }}
       </button>
     </div>
 
@@ -58,32 +58,33 @@
         <button @click="logout" class="text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded bg-red-50 border border-red-200">登出帳號</button>
       </div>
 
-      <!-- 輪次選擇器 -->
-      <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center text-xs">
-        <span class="text-slate-500 font-medium">📅 目前操作輪次：</span>
-        <select v-model="selectedRound" class="font-bold text-blue-600 bg-slate-50 border border-slate-200 rounded px-2 py-1">
-          <option v-for="(r, idx) in rounds" :key="idx" :value="idx">
-            第 {{ idx + 1 }} 輪 ({{ r.start }} - {{ r.end }})
-          </option>
-        </select>
-      </div>
-
-      <!-- 功能分頁按鈕 -->
+      <!-- 功能分頁按鈕 (補回總覽與圖表) -->
       <div class="flex bg-slate-200 p-1 rounded-xl text-xs font-bold text-slate-600">
-        <button @click="activeTab = 'entry'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'entry'}" class="flex-1 py-2 rounded-lg transition text-center">1. 極速輸入</button>
-        <button @click="activeTab = 'voucher'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'voucher'}" class="flex-1 py-2 rounded-lg transition text-center">2. 本輪核銷與明細</button>
+        <button @click="activeTab = 'entry'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'entry'}" class="flex-1 py-2 rounded-lg transition text-center">1. 記錄</button>
+        <button @click="activeTab = 'voucher'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'voucher'}" class="flex-1 py-2 rounded-lg transition text-center">2. 本輪明細</button>
+        <button @click="activeTab = 'overall'" :class="{'bg-white text-blue-600 shadow-sm': activeTab === 'overall'}" class="flex-1 py-2 rounded-lg transition text-center">3. 總覽與圖表</button>
       </div>
 
       <!-- 分頁 1: 極速輸入 -->
       <div v-if="activeTab === 'entry'" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <h3 class="text-sm font-bold text-slate-700 flex justify-between items-center">
           <span>➕ 記錄抽獎結果</span>
-          <span class="text-xs font-normal text-slate-400">登入者: {{ currentUser }}</span>
+          <span class="text-xs font-normal text-slate-400">記錄人: {{ currentUser }}</span>
         </h3>
+
+        <!-- 輪次選擇器 -->
+        <div class="space-y-1">
+          <label class="text-xs font-semibold text-slate-500">選擇輪次</label>
+          <select v-model="selectedRound" class="w-full font-bold text-blue-600 bg-slate-50 border border-slate-200 rounded p-2 text-xs">
+            <option v-for="(r, idx) in rounds" :key="idx" :value="idx">
+              第 {{ idx + 1 }} 輪 ({{ r.start }} - {{ r.end }})
+            </option>
+          </select>
+        </div>
 
         <!-- 選擇銀行 -->
         <div class="space-y-1">
-          <label class="text-xs font-semibold text-slate-500">選擇支付機構 / 銀行（同輪不可重複）</label>
+          <label class="text-xs font-semibold text-slate-500">選擇支付機構 / 銀行（本輪不可重複）</label>
           <div class="grid grid-cols-4 gap-1.5 pt-1">
             <button v-for="b in banks" :key="b" 
                     @click="selectBank(b)"
@@ -130,8 +131,10 @@
       <!-- 分頁 2: 本輪核銷與明細 -->
       <div v-if="activeTab === 'voucher'" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <div class="flex justify-between items-center">
-          <h3 class="text-sm font-bold text-slate-700">🎟️ 第 {{ selectedRound + 1 }} 輪優惠券與明細</h3>
-          <button @click="fetchData" class="text-xs text-blue-600 hover:underline">🔄 重新整理同步</button>
+          <h3 class="text-sm font-bold text-slate-700">🎟️ 本輪明細與核銷</h3>
+          <select v-model="selectedRound" class="font-bold text-blue-600 bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs">
+            <option v-for="(r, idx) in rounds" :key="idx" :value="idx">第 {{ idx + 1 }} 輪</option>
+          </select>
         </div>
         
         <div v-if="currentRoundRecords.length === 0" class="text-center py-8 text-xs text-slate-400">
@@ -161,13 +164,49 @@
         </div>
       </div>
 
+      <!-- 分頁 3: 總覽與圖表 (Overall) -->
+      <div v-if="activeTab === 'overall'" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4 text-xs">
+        <div class="flex justify-between items-center">
+          <h3 class="text-sm font-bold text-slate-700">📊 累積總覽與統計圖表</h3>
+          <button @click="fetchData" class="text-blue-600 hover:underline">🔄 重新整理</button>
+        </div>
+
+        <!-- 數據摘要卡片 -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="p-3 bg-blue-50 border border-blue-100 rounded-lg text-center">
+            <p class="text-slate-500">總累積獲得金額</p>
+            <p class="text-lg font-extrabold text-blue-600 mt-1">${{ totalWonAmount }}</p>
+          </div>
+          <div class="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-center">
+            <p class="text-slate-500">總有效記錄筆數</p>
+            <p class="text-lg font-extrabold text-emerald-600 mt-1">{{ records.length }} 筆</p>
+          </div>
+        </div>
+
+        <!-- 各輪次分佈長條圖表 -->
+        <div class="space-y-2 pt-2">
+          <h4 class="font-bold text-slate-700">📈 各輪次獎金分佈統計</h4>
+          <div class="space-y-1.5 bg-slate-50 p-3 rounded-lg border">
+            <div v-for="(r, idx) in rounds" :key="idx" class="space-y-0.5">
+              <div class="flex justify-between text-[11px] text-slate-600">
+                <span>第 {{ idx + 1 }} 輪 ({{ r.start }})</span>
+                <span class="font-bold">${{ getRoundTotalAmount(idx) }}</span>
+              </div>
+              <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                <div class="bg-blue-600 h-full rounded-full transition-all" :style="{ width: getRoundBarWidth(idx) }"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
   <script>
     const { createApp, ref, computed, onMounted } = Vue;
 
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxQ1bo-fYids5_i1oE5k6ZIKzkdj5Qi8o4AebGJScENQCgHs_u-81H8ZzQjmkzoEQqW/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxEHckcuIKHXtubHk7A8dfpIIRjBJdDI9kuyDjO9DyRGDu6i2KZmX6NRM295ue9QlB3-A/exec';
 
     createApp({
       setup() {
@@ -211,7 +250,7 @@
             const users = await res.json();
             
             const matched = users.find(user => 
-              user.username.toLowerCase() === uInput.toLowerCase() && user.pin === pInput
+              user.username.toLowerCase() === uInput.toLowerCase() && String(user.pin) === String(pInput)
             );
 
             if (matched) {
@@ -240,6 +279,7 @@
 
         const currentFormTotal = computed(() => form.value.draws.reduce((a, b) => a + b, 0));
 
+        // 檢查當前輪次是否已經記錄過該銀行（不論誰記錄的，全域同輪不可重複）
         const isBankRecordedInCurrentRound = (bank) => {
           return records.value.some(r => r.round === selectedRound.value && r.bank === bank);
         };
@@ -251,6 +291,23 @@
         const currentRoundRecords = computed(() => {
           return records.value.filter(r => r.round === selectedRound.value);
         });
+
+        // 總覽統計計算
+        const totalWonAmount = computed(() => {
+          return records.value.reduce((sum, r) => sum + r.draws.reduce((a, b) => a + b, 0), 0);
+        });
+
+        const getRoundTotalAmount = (roundIdx) => {
+          return records.value
+            .filter(r => r.round === roundIdx)
+            .reduce((sum, r) => sum + r.draws.reduce((a, b) => a + b, 0), 0);
+        };
+
+        const getRoundBarWidth = (roundIdx) => {
+          const max = Math.max(...rounds.map((_, idx) => getRoundTotalAmount(idx)), 1);
+          const current = getRoundTotalAmount(roundIdx);
+          return Math.round((current / max) * 100) + '%';
+        };
 
         const fetchData = async () => {
           try {
@@ -281,7 +338,7 @@
           if (!form.value.bank) return;
           isSubmitting.value = true;
           const newRecord = {
-            id: Date.now().toString(),
+            id: Date.now().toString() + Math.floor(Math.random()*1000),
             round: selectedRound.value,
             bank: form.value.bank,
             draws: [...form.value.draws],
@@ -315,9 +372,10 @@
 
         return {
           currentUser, userRole, activeTab, selectedRound, rounds, banks, amounts,
-          form, loginForm, loginError, isSubmitting, isLoadingUsers, currentFormTotal, currentRoundRecords,
+          form, loginForm, loginError, isSubmitting, isLoadingUsers, currentFormTotal, 
+          currentRoundRecords, totalWonAmount, getRoundTotalAmount, getRoundBarWidth,
           handleLogin, logout, selectBank, isBankRecordedInCurrentRound, submitRecord,
-          deleteRecord, toggleVoucher, fetchData
+          deleteRecord, toggleVoucher, fetchData, records
         };
       }
     }).mount('#app');
